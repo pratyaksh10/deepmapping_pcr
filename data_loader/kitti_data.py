@@ -43,6 +43,7 @@ class Kitti(Dataset):
             pass
         point_clouds = []
         max_points = 0
+        '''
         for file in tqdm(files, disable=not use_tqdm):
             # xyz = np.load(os.path.join(data_folder, file))
             # pcd = o3d.geometry.PointCloud()
@@ -89,6 +90,7 @@ class Kitti(Dataset):
 
         #pair_pcs = self.generate_pairs(self.point_clouds, self.group_matrix)
         #pair_pcs = np.load(r'C:\Users\praop\OneDrive\Desktop\NYU\AI4CE\code\DeepMapping_pcr\data_loader\group_pairs.npy')
+        '''
         pair_pcs = np.load(r'/mnt/NAS/home/xinhao/pcr_prat/group_pairs.npy')
         self.pair_pcs = pair_pcs[::3, :, :, :]
         self.n_pc = self.pair_pcs.shape[0]
