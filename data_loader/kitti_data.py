@@ -95,7 +95,7 @@ class Kitti(Dataset):
         self.pair_pcs = pair_pcs[::3, :, :, :]
         self.n_pc = self.pair_pcs.shape[0]
 
-        #print(pair_pcs.shape)
+        print(self.pair_pcs.shape)
         #np.save(r'C:\Users\praop\OneDrive\Desktop\NYU\AI4CE\code\DeepMapping_pcr\data_loader\group_pairs.npy', pair_pcs.cpu().detach().numpy())
 
     def __getitem__(self,index):
