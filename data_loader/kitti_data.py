@@ -88,7 +88,8 @@ class Kitti(Dataset):
                 self.group_matrix = self.group_matrix[:, :group_size]
 
         #pair_pcs = self.generate_pairs(self.point_clouds, self.group_matrix)
-        pair_pcs = np.load(r'C:\Users\praop\OneDrive\Desktop\NYU\AI4CE\code\DeepMapping_pcr\data_loader\group_pairs.npy')
+        #pair_pcs = np.load(r'C:\Users\praop\OneDrive\Desktop\NYU\AI4CE\code\DeepMapping_pcr\data_loader\group_pairs.npy')
+        pair_pcs = np.load(r'/mnt/NAS/home/xinhao/pcr_prat/group_pairs.npy')
         self.pair_pcs = pair_pcs[::3, :, :, :]
         self.n_pc = self.pair_pcs.shape[0]
 
