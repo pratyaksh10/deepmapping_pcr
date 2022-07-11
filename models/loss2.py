@@ -128,22 +128,22 @@ def bce_ch(src_trans, tgt, src_key_trans, tgt_key, src_key_knn, tgt_key_knn, pre
 
 	GAL = GlobalAlignLoss()
 	#ch = ChamferLoss()
-	#criterion = nn.MSELoss(reduction='none')
-	bce_loss = bce(pred, targets)
+	criterion = nn.MSELoss(reduction='none')
+	#bce_loss = bce(pred, targets)
 	gal_loss = GAL(src_trans, tgt, 0.01)
 
 
-	#keypoints_loss = criterion(src_key_trans, tgt_key).sum(1).sum(1).mean()
-	#knn_consensus_loss = criterion(src_key_knn, tgt_key_knn).sum(1).sum(1).mean()
-	#neighborhood_consensus_loss = knn_consensus_loss/4 + keypoints_loss
+	keypoints_loss = criterion(src_key_trans, tgt_key).sum(1).sum(1).mean()
+	knn_consensus_loss = criterion(src_key_knn, tgt_key_knn).sum(1).sum(1).mean()
+	neighborhood_consensus_loss = knn_consensus_loss/4 + keypoints_loss
 
 
 	#chamfer_loss = ch(source, template)
 
-	print('Gal loss:', gal_loss)
-	print('bce loss:', bce_loss)
+	#print('Gal loss:', gal_loss)
+	#print('bce loss:', bce_loss)
 	#print('neighborhood loss:', neighborhood_consensus_loss)
 
 
-	return (1-alpha)*gal_loss + alpha*bce_loss#+ neighborhood_consensus_loss
+	return gal_loss + neighborhood_consensus_loss 
     

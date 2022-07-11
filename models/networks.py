@@ -556,8 +556,11 @@ class SVDHead(nn.Module):
         # inlier confidence
         conf = self.weight_function(knn_distance, src_knn_distance)#[b, 1, n] # Eq. (7)
 
-        
-
+        src2 = (src * conf).sum(dim = 2, keepdim = True) / conf.sum(dim = 2, keepdim = True)
+        src_corr2 = (tgt * conf).sum(dim = 2, keepdim = True)/conf.sum(dim = 2,keepdim = True)
+        src_centered = src - src2
+        src_corr_centered = tgt - src_corr2
+        H = torch.matmul(src_centered * conf, src_corr_centered.transpose(2, 1).contiguous())
 
         ########################### Get top k keypoints #########################
         
@@ -572,11 +575,7 @@ class SVDHead(nn.Module):
         src_keypoints = torch.gather(src, dim = 2, index = src_keypoints_idx)
         tgt_keypoints = torch.gather(src_corr, dim = 2, index = src_keypoints_idx)
 
-        src2 = (src_keypoints * conf).sum(dim = 2, keepdim = True) / conf.sum(dim = 2, keepdim = True)
-        src_corr2 = (tgt_keypoints * conf).sum(dim = 2, keepdim = True)/conf.sum(dim = 2,keepdim = True)
-        src_centered = src_keypoints - src2
-        src_corr_centered = tgt_keypoints - src_corr2
-        H = torch.matmul(src_centered * conf, src_corr_centered.transpose(2, 1).contiguous())
+        
         
         #---------------Compute Rigid Body Transformation------------------
 
@@ -596,9 +595,6 @@ class SVDHead(nn.Module):
         R = torch.stack(R, dim=0)
 
         t = torch.matmul(-R, src2.mean(dim=2, keepdim=True)) + src_corr2.mean(dim=2, keepdim=True)
-
-    
-        
 
         src_keypoints_idx = src_topk_idx.repeat(1, N, 1) # [b, m, num_keypoints]
         
