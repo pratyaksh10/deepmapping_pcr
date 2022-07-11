@@ -13,7 +13,7 @@ from torch.optim.lr_scheduler import MultiStepLR
 from sklearn.metrics import mean_squared_error
 
 from models import utils, loss2, deepmapping2
-from data_loader import kitti_data
+from data_loader import kitti_data, kitti_data_test
 from lib.timer import AverageMeter
 import logging
 
@@ -21,12 +21,45 @@ import logging
 torch.backends.cudnn.deterministic = True
 torch.manual_seed(999)
 
+
+
+def eval_metric(rotation, translation, transformation_gt):
+
+
+
+    k = transformation_gt.shape[0]
+    success_meter, rte_meter, rre_meter = AverageMeter(), AverageMeter(), AverageMeter()
+    
+
+    for i in range(k):
+       
+
+        identity = np.eye(3)
+
+        rre = mean_squared_error(np.transpose(rotation[i, :, :].reshape(3,3)) @ transformation_gt[i, :3, :3].reshape(3,3), identity)
+        rte = mean_squared_error(translation[i, :].reshape(3, 1), transformation_gt[i, :3, 3].reshape(3, 1))
+
+        rte_meter.update(rte)
+        rre_meter.update(rre)
+
+        if rte < 2 and not np.isnan(rre) and rre < np.pi / 180 * 5:
+            success_meter.update(1)
+        else:
+            success_meter.update(0)
+            logging.info(f"Failed with RTE: {rte}, RRE: {rre}")
+
+    print('RTE:', rte_meter.avg)
+    print('RRE:', rre_meter.avg)
+    print('Success (%):', success_meter.avg*100)
+
+    return rre_meter.avg, rte_meter.avg
+
 if __name__ == '__main__':    
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--name',type=str,default='exp2_train_4',help='experiment name')
     parser.add_argument('-e','--n_epochs',type=int,default=120,help='number of epochs')
-    parser.add_argument('-b','--batch_size',type=int,default=2,help='batch_size')
+    parser.add_argument('-b','--batch_size',type=int,default=1,help='batch_size')
     parser.add_argument('-l','--loss',type=str,default='bce_ch',help='loss function')
     parser.add_argument('-n','--n_samples',type=int,default=45,help='number of sampled unoccupied points along rays')
     parser.add_argument('--lr',type=float,default=0.001,help='learning rate')
@@ -85,6 +118,11 @@ if __name__ == '__main__':
     train_dataset = kitti_data.Kitti('D:\kitti_group', opt.traj, opt.voxel_size, init_pose=None, 
             group=True, group_size=9)
     train_loader = DataLoader(train_dataset, batch_size=2, num_workers=8)
+
+    test_dataset = kitti_data_test.Kitti('D:\kitti_group', opt.traj, opt.voxel_size, init_pose=None, 
+            group=True, group_size=9)
+    test_loader = DataLoader(test_dataset, batch_size=2, num_workers=8)
+
     #test_loader =  DataLoader(dataset_test, batch_size=opt.batch_size, shuffle=False)
     loss_fn = eval('loss2.'+opt.loss)
     print('creating model......')
@@ -118,12 +156,23 @@ if __name__ == '__main__':
         print("Training epoch:", epoch)
         
 
-        for index, (obs_batch, pose_batch) in enumerate(train_loader):
+        for index, (obs_batch, pose_batch, gt_trans) in enumerate(train_loader):
 
             obs_batch = obs_batch.to(device)
             pose_batch = pose_batch.to(device)
+            gt_trans = gt_trans.to(device)
+
+            
 
             loss = model(obs_batch, pose_batch)
+
+            #R_pred, t_pred = model.R_est, model.t_est
+            
+            #identity = torch.eye(3).cuda().unsqueeze(0).repeat(opt.batch_size, 1, 1)
+            #loss_supervised = F.mse_loss(torch.matmul(R_pred.transpose(2, 1), gt_trans[:, :3, :3]), identity) \
+            #    + F.mse_loss(t_pred,  gt_trans[:, :3, 3].view(opt.batch_size, 3))
+
+                       
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
@@ -153,9 +202,10 @@ if __name__ == '__main__':
 
             with torch.no_grad():
                 model.eval()
-                for index, (obs_batch_test, pose_batch_test) in enumerate(train_loader):
+                for index, (obs_batch_test, pose_batch_test, gt_trans) in enumerate(train_loader):
                     obs_batch_test = obs_batch_test.to(device)
                     pose_batch_test = pose_batch_test.to(device)
+                    gt_trans = gt_trans.to(device)
 
                     model(obs_batch_test, pose_batch_test)
                     
@@ -163,19 +213,29 @@ if __name__ == '__main__':
                     template_pc_np.append(model.tmp.cpu().detach().numpy())
                     R_est_np.append(model.R_est.cpu().detach().numpy())
                     t_est_np.append(model.t_est.unsqueeze(1).cpu().detach().numpy())
+                    transformation_gt.append(gt_trans.cpu().detach().numpy())
 
                 R_est_np = np.concatenate(R_est_np)
                 t_est_np = np.concatenate(t_est_np)
+                transformation_gt = np.concatenate(transformation_gt)
+
+                avg_rot_error, avg_trans_error = eval_metric(R_est_np, t_est_np, transformation_gt)
+
+
+                if avg_trans_error <= trans_error_min:
+                    print('Translation error decreased ({:.6f} --> {:.6f}. Saving model...'.format(trans_error_min, avg_trans_error))
+                    save_name = os.path.join(checkpoint_dir,'model_best.pth')
+                    utils.save_checkpoint(save_name,model,optimizer)
+                    trans_error_min = avg_trans_error
+
+                    source_pc_est_np = np.concatenate(source_pc_est_np)
+                    template_pc_np = np.concatenate(template_pc_np)
+
+                    kwargs = {'e':epoch+1}
+
+                    utils.plot_global_point_cloud_KITTI(source_pc_est_np[1, :, :], template_pc_np[1, :, :], checkpoint_dir, plot_num=1, **kwargs)
+                    utils.plot_global_point_cloud_KITTI(source_pc_est_np[10, :, :], template_pc_np[10, :, :], checkpoint_dir, plot_num=2, **kwargs)
+                    utils.plot_global_point_cloud_KITTI(source_pc_est_np[30, :, :], template_pc_np[30, :, :], checkpoint_dir, plot_num=3, **kwargs)
                 
-                save_name = os.path.join(checkpoint_dir,'model_best.pth')
-                utils.save_checkpoint(save_name,model,optimizer)
 
-                source_pc_est_np = np.concatenate(source_pc_est_np)
-                template_pc_np = np.concatenate(template_pc_np)
-
-                kwargs = {'e':epoch+1}
-
-                utils.plot_global_point_cloud_KITTI(source_pc_est_np[1, :, :], template_pc_np[1, :, :], checkpoint_dir, plot_num=1, **kwargs)
-                utils.plot_global_point_cloud_KITTI(source_pc_est_np[100, :, :], template_pc_np[100, :, :], checkpoint_dir, plot_num=2, **kwargs)
-                utils.plot_global_point_cloud_KITTI(source_pc_est_np[800, :, :], template_pc_np[800, :, :], checkpoint_dir, plot_num=3, **kwargs)
-                 
+                
