@@ -45,7 +45,7 @@ class Kitti(Dataset):
         point_clouds = []
         max_points = 0
         
-        path = r'D:\kitti_group\2011_09_30_drive_0018_sync_tfvpr\gt_pose.npy'
+        path = r'/mnt/NAS/home/xinhao/deepmapping/main/data/kitti/2011_09_30_drive_0018_sync_tfvpr/gt_pose.npy'
 
         # point_clouds = np.load(os.path.join(data_folder, 'point_cloud.npy')).astype('float32')
         #gt_pose = np.load(os.path.join(data_folder, 'gt_pose.npy')).astype('float32')
