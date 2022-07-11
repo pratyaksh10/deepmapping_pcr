@@ -119,7 +119,7 @@ if __name__ == '__main__':
             group=True, group_size=9)
     train_loader = DataLoader(train_dataset, batch_size=2, num_workers=8)
 
-    test_dataset = kitti_data_test.Kitti('D:\kitti_group', opt.traj, opt.voxel_size, init_pose=None, 
+    test_dataset = kitti_data_test.Kitti(r'/mnt/NAS/home/xinhao/deepmapping/main/data/kitti/2011_09_30_drive_0018_sync_tfvpr', opt.traj, opt.voxel_size, init_pose=None, 
             group=True, group_size=9)
     test_loader = DataLoader(test_dataset, batch_size=2, num_workers=8)
 
