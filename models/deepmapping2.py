@@ -59,7 +59,7 @@ class DeepMappingKITTI(nn.Module):
         self.R_est, self.t_est, src_keypoints, tgt_keypoints, src_keypoints_knn, tgt_keypoints_knn = self.loc_net(self.obs_local)
 
         self.source_pc_transform = transform_to_global_KITTI(self.R_est.transpose(2,1).contiguous(), self.t_est, self.src) #<bxNx3>
-        self
+      
         
         if self.training:
 
