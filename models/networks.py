@@ -97,7 +97,7 @@ def knn(x, k):
     idx = pairwise_distance.topk(k=k, dim=-1)[1]  # (batch_size, num_points, k)
     return idx
 
-
+'''
 def get_graph_feature(x, k=32):
     # x = x.squeeze()
     idx = knn(x, k=k)  # (batch_size, num_points, k)
@@ -125,6 +125,42 @@ def get_graph_feature(x, k=32):
     feature = torch.cat((feature, x), dim=3).permute(0, 3, 1, 2)
 
     return feature, idx, knn_points
+'''
+
+def get_graph_feature(x, k):
+    """ 
+        knn-graph.
+        Args:
+            x: Input point clouds. Size [B, 3, N]
+            k: Number of nearest neighbors.
+        Returns:
+            idx: Nearest neighbor indices. Size [B * N * k]
+            relative_coordinates: Relative coordinates between nearest neighbors and the center point. Size [B, 3, N, K]
+            knn_points: Coordinates of nearest neighbors. Size[B, N, K, 3].
+            idx2: Nearest neighbor indices. Size [B, N, k]
+    """
+    idx = knn(x, k=k)  # (batch_size, num_points, k)
+    idx2 = idx
+    batch_size, num_points, _ = idx.size()
+    device = torch.device('cuda')
+
+    idx_base = torch.arange(0, batch_size, device=device).view(-1, 1, 1) * num_points
+
+    idx = idx + idx_base
+
+    idx = idx.view(-1)
+
+    _, num_dims, _ = x.size()
+
+    x = x.transpose(2,
+                    1).contiguous()  # (batch_size, num_points, num_dims)  -> (batch_size*num_points, num_dims) #   batch_size * num_points * k + range(0, batch_size*num_points)
+    knn_points = x.view(batch_size * num_points, -1)[idx, :]
+    knn_points = knn_points.view(batch_size, num_points, k, num_dims)#[b, n, k, 3],knn
+    x = x.view(batch_size, num_points, 1, num_dims).repeat(1, 1, k, 1)#[b, n, k, 3],central points
+
+    relative_coordinates = (knn_points - x).permute(0, 3, 1, 2)
+
+    return idx, relative_coordinates, knn_points, idx2
 
 
 class EncoderDecoder(nn.Module):
@@ -330,20 +366,24 @@ class PointNet(nn.Module):
 class DGCNN(nn.Module):
     def __init__(self, emb_dims=512):
         super(DGCNN, self).__init__()
-        self.conv1 = nn.Conv2d(6, 64, kernel_size=1, bias=False)
-        self.conv2 = nn.Conv2d(64, 64, kernel_size=1, bias=False)
-        self.conv3 = nn.Conv2d(64, 128, kernel_size=1, bias=False)
-        self.conv4 = nn.Conv2d(128, 256, kernel_size=1, bias=False)
-        self.conv5 = nn.Conv2d(512, emb_dims, kernel_size=1, bias=False)
-        self.bn1 = nn.BatchNorm2d(64)
-        self.bn2 = nn.BatchNorm2d(64)
-        self.bn3 = nn.BatchNorm2d(128)
-        self.bn4 = nn.BatchNorm2d(256)
+        self.conv1 = nn.Conv2d(3, 32, kernel_size=1, bias=False)
+        self.conv2 = nn.Conv2d(32, 32, kernel_size=1, bias=False)
+        self.conv3 = nn.Conv2d(32, 64, kernel_size=1, bias=False)
+        self.conv4 = nn.Conv2d(64, 128, kernel_size=1, bias=False)
+        self.conv5 = nn.Conv2d(256, emb_dims, kernel_size=1, bias=False)
+        self.bn1 = nn.BatchNorm2d(32)
+        self.bn2 = nn.BatchNorm2d(32)
+        self.bn3 = nn.BatchNorm2d(64)
+        self.bn4 = nn.BatchNorm2d(128)
         self.bn5 = nn.BatchNorm2d(emb_dims)
+        self.dp = nn.Dropout(p=0.3)
 
     def forward(self, x):
-        batch_size, num_dims, num_points = x.size()
-        x, idx, knn_pts = get_graph_feature(x)
+        
+        
+        idx, x, knn_pts, idx2 = get_graph_feature(x, k=32)
+        batch_size, num_dims, num_points, _ = x.size()
+
         x = F.relu(self.bn1(self.conv1(x)))
         x1 = x.max(dim=-1, keepdim=True)[0]
 
@@ -359,7 +399,8 @@ class DGCNN(nn.Module):
         x = torch.cat((x1, x2, x3, x4), dim=1)
 
         x = F.relu(self.bn5(self.conv5(x))).view(batch_size, -1, num_points)
-        return x, idx, knn_pts
+
+        return x, idx, knn_pts, idx2
 
 
 class MLPHead(nn.Module):
@@ -557,26 +598,11 @@ class SVDHead(nn.Module):
         conf = self.weight_function(knn_distance, src_knn_distance)#[b, 1, n] # Eq. (7)
 
         src2 = (src * conf).sum(dim = 2, keepdim = True) / conf.sum(dim = 2, keepdim = True)
-        src_corr2 = (tgt * conf).sum(dim = 2, keepdim = True)/conf.sum(dim = 2,keepdim = True)
+        src_corr2 = (src_corr * conf).sum(dim = 2, keepdim = True)/conf.sum(dim = 2,keepdim = True)
         src_centered = src - src2
-        src_corr_centered = tgt - src_corr2
+        src_corr_centered = src_corr - src_corr2
         H = torch.matmul(src_centered * conf, src_corr_centered.transpose(2, 1).contiguous())
 
-        ########################### Get top k keypoints #########################
-        
-        conf, src_topk_idx = torch.topk(conf, k = self.num_keypoints, dim = 2, sorted=False)
-        src_keypoints_idx_2 = src_topk_idx.repeat(1, N, 1) # [b, m, num_keypoints]
-        src_keypoints_idx_3 = src_topk_idx.unsqueeze(-1).repeat(1, 3, 1, self.k) #[b, 3, num_keypoints, k]
-        tgt_keypoints_knn = torch.gather(knn_distance.permute(0,3,1,2), dim = 2, index = src_keypoints_idx_3) #[b, 3, num_kepoints, k]
-
-        src_keypoints_idx = src_topk_idx.repeat(1, 3, 1)
-
-        # Top key points
-        src_keypoints = torch.gather(src, dim = 2, index = src_keypoints_idx)
-        tgt_keypoints = torch.gather(src_corr, dim = 2, index = src_keypoints_idx)
-
-        
-        
         #---------------Compute Rigid Body Transformation------------------
 
         R = []
@@ -596,14 +622,25 @@ class SVDHead(nn.Module):
 
         t = torch.matmul(-R, src2.mean(dim=2, keepdim=True)) + src_corr2.mean(dim=2, keepdim=True)
 
-        src_keypoints_idx = src_topk_idx.repeat(1, N, 1) # [b, m, num_keypoints]
+        ########################### Get top k keypoints #########################
         
-        src_transformed = transform_to_global_KITTI(R, t.view(batch_size, 3), src.transpose(2, 1).contiguous())
-        src_transformed_knn_corr = src_transformed.transpose(2,1).contiguous().view(batch_size * N, -1)[src_idx, :]
-        src_transformed_knn_corr = src_transformed_knn_corr.view(batch_size, N, k, num_dims_src) #[b, n, k, 3]
-        knn_distance2 = src_transformed.unsqueeze(2) - src_transformed_knn_corr #[b, n, k, 3]
-        src_keypoints_knn = torch.gather(knn_distance2.permute(0,3,1,2), dim = 2, index = src_keypoints_idx_3) #[b, 3, num_kepoints, k]
+        src_topk_idx = torch.topk(conf, k = self.num_keypoints, dim = 2, sorted=False)[1]
+        src_keypoints_idx = src_topk_idx.repeat(1, 3, 1)
+        src_keypoints = torch.gather(src, dim = 2, index = src_keypoints_idx)
+        tgt_keypoints = torch.gather(src_corr, dim = 2, index = src_keypoints_idx)
 
+        src_keypoints_idx2 = src_topk_idx.unsqueeze(-1).repeat(1, 3, 1, k) #[b, 3, num_keypoints, k]
+        tgt_keypoints_knn = torch.gather(knn_distance.permute(0,3,1,2), dim = 2, index = src_keypoints_idx2) #[b, 3, num_kepoints, k]
+
+        src_transformed = transform_to_global_KITTI(R.transpose(2, 1).contiguous(), t.view(batch_size, 3), src.transpose(2, 1).contiguous()) # <BxNx3>
+        
+        src_transformed_knn_corr = src_transformed.view(batch_size * N, -1)[src_idx, :]
+        src_transformed_knn_corr = src_transformed_knn_corr.view(batch_size, N, k, num_dims_src) #[b, n, k, 3]
+        
+        knn_distance2 = src_transformed.unsqueeze(2) - src_transformed_knn_corr #[b, n, k, 3]
+        src_keypoints_knn = torch.gather(knn_distance2.permute(0,3,1,2), dim = 2, index = src_keypoints_idx2) #[b, 3, num_kepoints, k]
+
+       
         return R, t.view(batch_size, 3), src_keypoints, tgt_keypoints, src_keypoints_knn, tgt_keypoints_knn
 
 class LNet2(nn.Module):
@@ -630,8 +667,8 @@ class LNet2(nn.Module):
         rotation_ab = torch.eye(3, device=src.device, dtype=torch.float32).view(1, 3, 3).repeat(src.shape[0], 1, 1)
         translation_ab = torch.zeros(3, device=src.device, dtype=torch.float32).view(1, 3).repeat(src.shape[0], 1)
         
-        src_embedding, src_idx, src_knn_pts = self.emb_nn(src.transpose(2,1).contiguous())   #<bxdxN>
-        tgt_embedding, _, _ = self.emb_nn(tgt.transpose(2,1).contiguous())   #<bxdxN>
+        src_embedding, src_idx, src_knn_pts, _ = self.emb_nn(src.transpose(2,1).contiguous())   #<bxdxN>
+        tgt_embedding, _, tgt_knn_pts, _ = self.emb_nn(tgt.transpose(2,1).contiguous())   #<bxdxN>
 
         src_embedding_p, tgt_embedding_p = self.pointer(src_embedding, tgt_embedding)
 

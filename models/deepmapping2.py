@@ -59,7 +59,7 @@ class DeepMappingKITTI(nn.Module):
         self.R_est, self.t_est, src_keypoints, tgt_keypoints, src_keypoints_knn, tgt_keypoints_knn = self.loc_net(self.obs_local)
 
         self.source_pc_transform = transform_to_global_KITTI(self.R_est.transpose(2,1).contiguous(), self.t_est, self.src) #<bxNx3>
-      
+  
         
         if self.training:
 
@@ -67,15 +67,12 @@ class DeepMappingKITTI(nn.Module):
             self.source_keypoints_transform = transform_to_global_KITTI(self.R_est.transpose(2,1).contiguous(), self.t_est, src_keypoints) #<bxkey_pointsx3>
             self.unoccupied_local = sample_unoccupied_point(
                 tgt_keypoints, self.n_samples,sensor_center)
-            #self.unoccupied_global = transform_to_global_KITTI(self.R_est.transpose(2,1).contiguous(), self.t_est, self.unoccupied_local)
 
             inputs, self.gt = get_M_net_inputs_labels(
                 self.source_keypoints_transform, self.unoccupied_local)
         
             self.occp_prob = self.occup_net(inputs)
             
-            #source_keypoints_transform = transform_to_global_KITTI(self.R_est, self.t_est, src_keypoints) #<bxkey_pointsx3>
-
             loss = self.compute_loss(self.source_pc_transform, self.tmp, self.source_keypoints_transform, tgt_keypoints,
                                         src_keypoints_knn, tgt_keypoints_knn, self.occp_prob, self.gt)
             return loss
