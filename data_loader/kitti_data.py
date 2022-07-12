@@ -45,7 +45,7 @@ class Kitti(Dataset):
         point_clouds = []
         max_points = 0
         
-        path = r'/mnt/NAS/home/xinhao/deepmapping/main/data/kitti/2011_09_30_drive_0018_sync_tfvpr/gt_pose.npy'
+        path = r'D:\kitti_group\2011_09_30_drive_0018_sync_tfvpr\gt_pose.npy'
 
         # point_clouds = np.load(os.path.join(data_folder, 'point_cloud.npy')).astype('float32')
         #gt_pose = np.load(os.path.join(data_folder, 'gt_pose.npy')).astype('float32')
@@ -85,34 +85,34 @@ class Kitti(Dataset):
         print('shape of point cloud:', self.point_clouds.shape)
         self.n_pc = self.point_clouds.shape[0]
         self.n_points = self.point_clouds.shape[1]
-        self.valid_points = find_valid_points(self.point_clouds)
-        max_dst = utils.transform_to_global_KITTI(torch.tensor(self.gt_pose), self.point_clouds).max().item()
-        self.point_clouds /= max_dst
-        self.init_pose[:, :2] = self.init_pose[:, :2] / max_dst
-        self.gt_pose[:, :2] =  self.gt_pose[:, :2] / max_dst
-        if self.group_flag:
-            self.group_matrix = np.load(os.path.join(data_folder, 'group_matrix.npy')).astype('int')
-            if self.group_matrix.shape[1] < group_size:
-                print("Warning: matrix size {} is smaller than group size {}, using {}".format(self.group_matrix.shape[1], kwargs['group_size'], self.group_matrix.shape[1]))
-            else:
-                self.group_matrix = self.group_matrix[:, :group_size]
+        #self.valid_points = find_valid_points(self.point_clouds)
+        #max_dst = utils.transform_to_global_KITTI(torch.tensor(self.gt_pose), self.point_clouds).max().item()
+        #self.point_clouds /= max_dst
+        #self.init_pose[:, :2] = self.init_pose[:, :2] / max_dst
+        #self.gt_pose[:, :2] =  self.gt_pose[:, :2] / max_dst
+        #if self.group_flag:
+        #    self.group_matrix = np.load(os.path.join(data_folder, 'group_matrix.npy')).astype('int')
+        #    if self.group_matrix.shape[1] < group_size:
+        #        print("Warning: matrix size {} is smaller than group size {}, using {}".format(self.group_matrix.shape[1], kwargs['group_size'], self.group_matrix.shape[1]))
+        #    else:
+        #        self.group_matrix = self.group_matrix[:, :group_size]
 
         pair_pcs, pair_gt_trans = self.generate_pairs(self.point_clouds, self.group_matrix)
-        #np.save(r'C:\Users\praop\OneDrive\Desktop\NYU\AI4CE\code\DeepMapping_pcr\data_loader\group_gt_trans.npy', pair_gt_trans)
-        #np.save(r'C:\Users\praop\OneDrive\Desktop\NYU\AI4CE\code\DeepMapping_pcr\data_loader\pc_pairs_01.npy', pair_pcs)
+        np.save(r'/mnt/NAS/home/xinhao/pcr_prat/deepmapping_pcr/group_gt_trans.npy', pair_gt_trans)
+        np.save(r'/mnt/NAS/home/xinhao/pcr_prat/deepmapping_pcr/pc_pairs_01.npy', pair_pcs)
         
 
-        #pair_gt_trans = np.load(r'C:\Users\praop\OneDrive\Desktop\NYU\AI4CE\code\DeepMapping_pcr\data_loader\group_gt_trans.npy')
+        #pair_gt_trans = np.load(r'/mnt/NAS/home/xinhao/pcr_prat/deepmapping_pcr/group_gt_trans.npy')
 
-        #pair_pcs = np.load(r'C:\Users\praop\OneDrive\Desktop\NYU\AI4CE\code\DeepMapping_pcr\data_loader\pc_pairs_01.npy')
+        #pair_pcs = np.load(r'/mnt/NAS/home/xinhao/pcr_prat/deepmapping_pcr/pc_pairs_01.npy')
 
         
         #pair_pcs = np.load(r'/mnt/NAS/home/xinhao/pcr_prat/group_pairs.npy')
         #self.pair_pcs = pair_pcs[:50, :, :, :]
         #self.gt_trans = pair_gt_trans[:50, :, :]
-        #self.n_pc = self.pair_pcs.shape[0]
+        self.n_pc = self.pair_pcs.shape[0]
 
-        #self.N = self.pair_pcs.shape[2]
+        self.N = self.pair_pcs.shape[2]
         
         #np.save(r'C:\Users\praop\OneDrive\Desktop\NYU\AI4CE\code\DeepMapping_pcr\data_loader\group_pairs.npy', pair_pcs.cpu().detach().numpy())
 
@@ -174,11 +174,12 @@ class Kitti(Dataset):
         '''
 
         pcd_pair = self.pair_pcs[index,:,:, :] #<2xNx3>, <source_pc, template_pc>
-        sample_idx = np.random.choice(self.N, 2048, replace=False)
+        sample_idx = np.random.choice(self.N, 1024, replace=False)
         pcd0 = pcd_pair[0, :, :]
         pcd1 = pcd_pair[1, :, :]
         pcd0 = pcd0[sample_idx, :]
         pcd1 = pcd1[sample_idx, :]
+        Tr = self.gt_trans[index, :, :] # <4, 4>
 
         min_v1, max_v1 = np.min(pcd0),np.max(pcd0)
         s1 = (max_v1 - min_v1)
@@ -191,6 +192,10 @@ class Kitti(Dataset):
         pcd0 = (pcd0 - min_v1)/s
         pcd1 = (pcd1 - min_v2)/s
 
+        lala = np.ones_like(Tr[:3,3])*min_v1
+        translations = (Tr[:3,3] - min_v2 + lala@ Tr[:3,:3].T)/s
+        pcd1 = pcd1 - translations + Tr[:3,3]
+
         pc_pair = [pcd0, pcd1]
 
         #pc_pair = [xyz0, xyz1]
@@ -199,10 +204,9 @@ class Kitti(Dataset):
         pc_pair_th = torch.from_numpy(pc_pair).float()
   
         
-        gt_trans = self.gt_trans[index, :, :] # <4, 4>
         pose = torch.zeros(1,4,dtype=torch.float32)
         
-        return pc_pair_th, pose, gt_trans
+        return pc_pair_th, pose, Tr
 
     
     def generate_pairs(self, point_clouds, group_matrix):
