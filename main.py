@@ -58,8 +58,8 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
     parser.add_argument('--name',type=str,default='exp2_train_4',help='experiment name')
-    parser.add_argument('-e','--n_epochs',type=int,default=120,help='number of epochs')
-    parser.add_argument('-b','--batch_size',type=int,default=1,help='batch_size')
+    parser.add_argument('-e','--n_epochs',type=int,default=60,help='number of epochs')
+    parser.add_argument('-b','--batch_size',type=int,default=4,help='batch_size')
     parser.add_argument('-l','--loss',type=str,default='bce_ch',help='loss function')
     parser.add_argument('-n','--n_samples',type=int,default=45,help='number of sampled unoccupied points along rays')
     parser.add_argument('--lr',type=float,default=0.001,help='learning rate')
@@ -96,7 +96,7 @@ if __name__ == '__main__':
                         help='Whether to use cycle consistency')
     parser.add_argument('--unseen', type=bool, default=False, metavar='N',
                         help='Wheter to test on unseen category')
-    parser.add_argument('--num_keypoints', type=int, default=1024, metavar='N',
+    parser.add_argument('--num_keypoints', type=int, default=600, metavar='N',
                         help='Number of key poinits')
     parser.add_argument('--des_dim', type=int, default=256, metavar='N',
                         help='Neiborhood descriptor dimension')
@@ -115,13 +115,13 @@ if __name__ == '__main__':
     print("Device:", device)
 
     print('loading dataset........')
-    train_dataset = kitti_data.Kitti('D:\kitti_group', opt.traj, opt.voxel_size, init_pose=None, 
+    train_dataset = kitti_data.Kitti('/mnt/NAS/home/xinhao/deepmapping/main/data/kitti/', opt.traj, opt.voxel_size, init_pose=None, 
             group=True, group_size=9)
-    train_loader = DataLoader(train_dataset, batch_size=2, num_workers=8)
+    train_loader = DataLoader(train_dataset, batch_size=4, num_workers=8)
 
-    test_dataset = kitti_data_test.Kitti(r'/mnt/NAS/home/xinhao/deepmapping/main/data/kitti/2011_09_30_drive_0018_sync_tfvpr', opt.traj, opt.voxel_size, init_pose=None, 
+    test_dataset = kitti_data_test.Kitti('/mnt/NAS/home/xinhao/deepmapping/main/data/kitti/', opt.traj, opt.voxel_size, init_pose=None, 
             group=True, group_size=9)
-    test_loader = DataLoader(test_dataset, batch_size=2, num_workers=8)
+    test_loader = DataLoader(test_dataset, batch_size=4, num_workers=8)
 
     #test_loader =  DataLoader(dataset_test, batch_size=opt.batch_size, shuffle=False)
     loss_fn = eval('loss2.'+opt.loss)
