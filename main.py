@@ -115,7 +115,7 @@ if __name__ == '__main__':
     print("Device:", device)
 
     print('loading dataset........')
-    train_dataset = kitti_data.Kitti('/mnt/NAS/home/xinhao/deepmapping/main/data/kitti/', opt.traj, opt.voxel_size, init_pose=None, 
+    train_dataset = kitti_data.Kitti('D:\kitti_group', opt.traj, opt.voxel_size, init_pose=None, 
             group=True, group_size=9)
     train_loader = DataLoader(train_dataset, batch_size=4, num_workers=8)
 
